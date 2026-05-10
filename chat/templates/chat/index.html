@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Support Chat</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: #f0f2f5;
+        }
+
+        .chat-box {
+            width: 400px;
+            height: 550px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: #075e54;
+            color: white;
+            padding: 16px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .chat-header span {
+            font-size: 12px;
+            font-weight: normal;
+            opacity: 0.8;
+            display: block;
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .message {
+            max-width: 75%;
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-size: 14px;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+
+        .message.customer {
+            background: #dcf8c6;
+            align-self: flex-end;
+            border-bottom-right-radius: 2px;
+        }
+
+        .message.agent {
+            background: #f1f1f1;
+            align-self: flex-start;
+            border-bottom-left-radius: 2px;
+        }
+
+        .typing-indicator {
+            font-size: 12px;
+            color: #888;
+            padding: 4px 8px;
+            min-height: 20px;
+        }
+
+        .chat-input-area {
+            display: flex;
+            padding: 12px;
+            border-top: 1px solid #eee;
+            gap: 8px;
+        }
+
+        .chat-input-area input {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            outline: none;
+            font-size: 14px;
+        }
+
+        .chat-input-area input:focus {
+            border-color: #075e54;
+        }
+
+        .chat-input-area button {
+            background: #075e54;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            cursor: pointer;
+            font-size: 18px;
+        }
+
+        .chat-input-area button:hover {
+            background: #128c7e;
+        }
+    </style>
+</head>
+<body>
+
+<div class="chat-box">
+    <div class="chat-header">
+        SwiftDesk Support
+        <span id="status">Connecting...</span>
+    </div>
+
+    <div class="chat-messages" id="messages"></div>
+
+    <div class="typing-indicator" id="typing"></div>
+
+    <div class="chat-input-area">
+        <input
+            type="text"
+            id="messageInput"
+            placeholder="Type a message..."
+            autocomplete="off"
+        />
+        <button onclick="sendMessage()">➤</button>
+    </div>
+</div>
+
+<script>
+    const sessionId = "{{ session_id }}";
+    const senderType = "customer";
+
+    const ws = new WebSocket(`ws://${window.location.host}/ws/chat/${sessionId}/`);
+
+    ws.onopen = () => {
+        document.getElementById('status').innerText = 'Connected';
+    };
+
+    ws.onclose = () => {
+        document.getElementById('status').innerText = 'Disconnected';
+    };
+
+    ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+
+        if (data.type === 'message') {
+            appendMessage(data.content, data.sender_type);
+            clearTyping();
+        } else if (data.type === 'typing') {
+            if (data.sender_type !== senderType) {
+                showTyping(data.sender_type);
+            }
+        }
+    };
+
+    // Typing indicator
+    let typingTimer;
+    document.getElementById('messageInput').addEventListener('input', () => {
+        ws.send(JSON.stringify({ type: 'typing', sender_type: senderType }));
+        clearTimeout(typingTimer);
+        typingTimer = setTimeout(clearTyping, 2000);
+    });
+
+    // Send on Enter key
+    document.getElementById('messageInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') sendMessage();
+    });
+
+    function sendMessage() {
+        const input = document.getElementById('messageInput');
+        const content = input.value.trim();
+        if (!content) return;
+
+        ws.send(JSON.stringify({
+            type: 'message',
+            content: content,
+            sender_type: senderType
+        }));
+
+        input.value = '';
+    }
+
+    function appendMessage(content, sender) {
+        const messages = document.getElementById('messages');
+        const div = document.createElement('div');
+        div.className = `message ${sender}`;
+        div.innerText = content;
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+    }
+
+    function showTyping(sender) {
+        document.getElementById('typing').innerText = `${sender} is typing...`;
+    }
+
+    function clearTyping() {
+        document.getElementById('typing').innerText = '';
+    }
+</script>
+
+</body>
+</html>

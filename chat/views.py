@@ -1,7 +1,12 @@
-from django.shortcuts import get_object_or_404, redirect, render
-from django.views.decorators.http import require_http_methods
+from django.shortcuts import render
 
-from .models import ChatMessage, ChatSession
-
+from .models import ChatSession
 
 
+
+def chat_room(request):
+    customer_name = request.GET.get('name' , 'Guest')
+    
+    session = ChatSession.objects.create(customer_name=customer_name)
+    
+    return render(request, 'chat/index.html', {'session_id': session.id})
