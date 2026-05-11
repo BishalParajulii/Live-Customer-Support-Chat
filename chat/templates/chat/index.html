@@ -139,9 +139,10 @@
 
 <script>
     const sessionId = "{{ session_id }}";
-    const senderType = "customer";
+    const senderType = "{{ sender_type }}" || 'customer'; // Default to 'customer' if not provided
 
-    const ws = new WebSocket(`ws://${window.location.host}/ws/chat/${sessionId}/`);
+    const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${wsScheme}://${window.location.host}/ws/chat/${sessionId}/`);
 
     ws.onopen = () => {
         document.getElementById('status').innerText = 'Connected';
@@ -167,6 +168,8 @@
     // Typing indicator
     let typingTimer;
     document.getElementById('messageInput').addEventListener('input', () => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+
         ws.send(JSON.stringify({ type: 'typing', sender_type: senderType }));
         clearTimeout(typingTimer);
         typingTimer = setTimeout(clearTyping, 2000);
@@ -181,6 +184,7 @@
         const input = document.getElementById('messageInput');
         const content = input.value.trim();
         if (!content) return;
+        if (ws.readyState !== WebSocket.OPEN) return;
 
         ws.send(JSON.stringify({
             type: 'message',
