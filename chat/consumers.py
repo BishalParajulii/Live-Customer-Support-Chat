@@ -80,6 +80,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'reader_type': reader_type,
                 }
             )
+        elif msg_type == 'close':
+            await self.close_session()
+            await self.channel_layer.group_send(
+                self.group_name,
+                {
+                    'type' : 'chat.closed',
+                }
+            )
+                
 
     async def chat_message(self, event):
         await self.send(text_data=json.dumps({
@@ -101,6 +110,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'type': 'read',
             'reader_type': event['reader_type'],
         }))
+        
+    async def chat_closed(self, event):
+        await self.send(text_data = json.dumps({
+            'type' : 'closed',
+        }))
+        
+    @database_sync_to_async
+    def close_session(self):
+        ChatSession.objects.filter(id=self.session_id).update(status='closed')
+        
        
     @database_sync_to_async 
     def get_history(self):

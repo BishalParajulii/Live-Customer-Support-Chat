@@ -31,3 +31,13 @@ class ChatMessage(models.Model):
     
     def __str__(self):
         return f"{self.sender} - {self.content[:20]}..."
+    
+
+class Rating(models.Model):
+    session = models.OneToOneField(ChatSession, on_delete=models.CASCADE)
+    score = models.IntegerField()
+    feedback = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"session {self.session.id} - rating {self.score}"

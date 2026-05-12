@@ -24,6 +24,7 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            position: relative;
         }
 
         .chat-header {
@@ -32,13 +33,31 @@
             padding: 16px;
             font-size: 16px;
             font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
-        .chat-header span {
+        .chat-header .header-info span {
             font-size: 12px;
             font-weight: normal;
             opacity: 0.8;
             display: block;
+        }
+
+        .close-btn {
+            background: #c62828;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        .close-btn:hover {
+            background: #b71c1c;
         }
 
         .chat-messages {
@@ -57,8 +76,8 @@
             font-size: 14px;
             line-height: 1.4;
             word-wrap: break-word;
-            display: flex;           /* ← add */
-            flex-direction: column;  /* ← add */
+            display: flex;
+            flex-direction: column;
         }
 
         .message.customer {
@@ -89,6 +108,11 @@
             margin-top: 2px;
         }
 
+        .timestamp {
+            font-size: 10px;
+            color: #999;
+        }
+
         .tick {
             font-size: 10px;
             color: #8a8a8a;
@@ -98,10 +122,6 @@
         .tick.seen {
             color: #34b7f1;
         }
-        .timestamp {
-        font-size: 10px;
-        color: #999;
-    }
 
         .chat-input-area {
             display: flex;
@@ -135,7 +155,7 @@
         }
 
         .chat-input-area button:hover {
-            background: #2c459c;
+            background: #3a5bc7;
         }
     </style>
 </head>
@@ -143,8 +163,11 @@
 
 <div class="chat-box">
     <div class="chat-header">
-        SwiftDesk Agent
-        <span id="status">Connecting...</span>
+        <div class="header-info">
+            SwiftDesk Agent
+            <span id="status">Connecting...</span>
+        </div>
+        <button class="close-btn" onclick="closeSession()">End Chat</button>
     </div>
 
     <div class="chat-messages" id="messages"></div>
@@ -183,25 +206,23 @@
         if (data.type === 'message') {
             appendMessage(data.content, data.sender_type, data.timestamp || '', data.is_read || false);
             clearTyping();
-
-            // Send read receipt
             if (data.sender_type !== senderType) {
                 ws.send(JSON.stringify({ type: 'read', sender_type: senderType }));
             }
-
         } else if (data.type === 'typing') {
             if (data.sender_type !== senderType) {
                 showTyping(data.sender_type);
             }
-
         } else if (data.type === 'read') {
             if (data.reader_type !== senderType) {
                 markOwnMessagesSeen();
             }
+        } else if (data.type === 'closed') {
+            document.getElementById('status').innerText = 'Session Closed';
+            document.getElementById('messageInput').disabled = true;
         }
     };
 
-    // Typing indicator
     let typingTimer;
     document.getElementById('messageInput').addEventListener('input', () => {
         if (ws.readyState !== WebSocket.OPEN) return;
@@ -210,7 +231,6 @@
         typingTimer = setTimeout(clearTyping, 2000);
     });
 
-    // Send on Enter
     document.getElementById('messageInput').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') sendMessage();
     });
@@ -220,13 +240,11 @@
         const content = input.value.trim();
         if (!content) return;
         if (ws.readyState !== WebSocket.OPEN) return;
-
         ws.send(JSON.stringify({
             type: 'message',
             content: content,
             sender_type: senderType
         }));
-
         input.value = '';
     }
 
@@ -250,10 +268,7 @@
 
         if (sender === senderType) {
             const readStatusSpan = document.createElement('span');
-            readStatusSpan.className = 'tick';
-            if (isRead) {
-                readStatusSpan.classList.add('seen');
-            }
+            readStatusSpan.className = isRead ? 'tick seen' : 'tick';
             readStatusSpan.innerText = '✓✓';
             metaDiv.appendChild(readStatusSpan);
         }
@@ -264,9 +279,8 @@
     }
 
     function markOwnMessagesSeen() {
-        document.querySelectorAll('.message.' + senderType + ' .tick').forEach(tick => {
+        document.querySelectorAll('.message.agent .tick').forEach(tick => {
             tick.classList.add('seen');
-            tick.innerText = '✓✓';
         });
     }
 
@@ -276,6 +290,11 @@
 
     function clearTyping() {
         document.getElementById('typing').innerText = '';
+    }
+
+    function closeSession() {
+        if (!confirm('End this chat session?')) return;
+        ws.send(JSON.stringify({ type: 'close' }));
     }
 </script>
 

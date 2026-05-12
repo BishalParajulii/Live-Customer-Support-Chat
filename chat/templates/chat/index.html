@@ -24,6 +24,7 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            position: relative;
         }
 
         .chat-header {
@@ -57,8 +58,8 @@
             font-size: 14px;
             line-height: 1.4;
             word-wrap: break-word;
-            display: flex;           /* ← add */
-            flex-direction: column;  /* ← add */
+            display: flex;
+            flex-direction: column;
         }
 
         .message.customer {
@@ -80,6 +81,30 @@
             min-height: 20px;
         }
 
+        .msg-meta {
+            display: flex;
+            justify-content: flex-end;
+            gap: 4px;
+            font-size: 10px;
+            color: #999;
+            margin-top: 2px;
+        }
+
+        .timestamp {
+            font-size: 10px;
+            color: #999;
+        }
+
+        .tick {
+            font-size: 10px;
+            color: #8a8a8a;
+            letter-spacing: -2px;
+        }
+
+        .tick.seen {
+            color: #34b7f1;
+        }
+
         .chat-input-area {
             display: flex;
             padding: 12px;
@@ -95,23 +120,6 @@
             outline: none;
             font-size: 14px;
         }
-        .msg-meta {
-        display: flex;
-        justify-content: flex-end;
-        gap: 4px;
-        font-size: 10px;
-        color: #999;
-        margin-top: 2px;
-    }
-
-    .tick {
-        color: #8a8a8a;
-        letter-spacing: -2px;
-    }
-
-    .tick.seen {
-        color: #34b7f1;
-    }
 
         .chat-input-area input:focus {
             border-color: #075e54;
@@ -130,6 +138,78 @@
 
         .chat-input-area button:hover {
             background: #128c7e;
+        }
+
+        .rating-modal {
+            display: none;
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            border-radius: 12px;
+        }
+
+        .rating-modal.show {
+            display: flex;
+        }
+
+        .rating-box {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            text-align: center;
+            width: 280px;
+        }
+
+        .rating-box h3 {
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .rating-box p {
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 16px;
+        }
+
+        .stars {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .star {
+            font-size: 32px;
+            cursor: pointer;
+            color: #ddd;
+            transition: color 0.2s;
+        }
+
+        .star.active {
+            color: #f4c542;
+        }
+
+        .rating-box textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            resize: none;
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
+
+        .rating-box button {
+            background: #075e54;
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
         }
     </style>
 </head>
@@ -154,11 +234,27 @@
         />
         <button onclick="sendMessage()">➤</button>
     </div>
+
+    <div class="rating-modal" id="ratingModal">
+        <div class="rating-box">
+            <h3>Rate your experience</h3>
+            <p>How was your support session?</p>
+            <div class="stars" id="stars">
+                <span class="star" data-value="1">★</span>
+                <span class="star" data-value="2">★</span>
+                <span class="star" data-value="3">★</span>
+                <span class="star" data-value="4">★</span>
+                <span class="star" data-value="5">★</span>
+            </div>
+            <textarea id="feedback" rows="3" placeholder="Optional feedback..."></textarea>
+            <button onclick="submitRating()">Submit</button>
+        </div>
+    </div>
 </div>
 
 <script>
     const sessionId = "{{ session_id }}";
-    const senderType = "{{ sender_type }}" || 'customer'; // Default to 'customer' if not provided
+    const senderType = "{{ sender_type }}" || 'customer';
 
     const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${wsScheme}://${window.location.host}/ws/chat/${sessionId}/`);
@@ -177,34 +273,32 @@
         if (data.type === 'message') {
             appendMessage(data.content, data.sender_type, data.timestamp || '', data.is_read || false);
             clearTyping();
-
-            // Send read receipt
             if (data.sender_type !== senderType) {
                 ws.send(JSON.stringify({ type: 'read', sender_type: senderType }));
             }
-
         } else if (data.type === 'typing') {
             if (data.sender_type !== senderType) {
                 showTyping(data.sender_type);
             }
-
         } else if (data.type === 'read') {
             if (data.reader_type !== senderType) {
                 markOwnMessagesSeen();
             }
+        } else if (data.type === 'closed') {
+            document.getElementById('status').innerText = 'Session Closed';
+            document.getElementById('messageInput').disabled = true;
+            document.getElementById('ratingModal').classList.add('show');
         }
     };
-    // Typing indicator
+
     let typingTimer;
     document.getElementById('messageInput').addEventListener('input', () => {
         if (ws.readyState !== WebSocket.OPEN) return;
-
         ws.send(JSON.stringify({ type: 'typing', sender_type: senderType }));
         clearTimeout(typingTimer);
         typingTimer = setTimeout(clearTyping, 2000);
     });
 
-    // Send on Enter key
     document.getElementById('messageInput').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') sendMessage();
     });
@@ -214,13 +308,11 @@
         const content = input.value.trim();
         if (!content) return;
         if (ws.readyState !== WebSocket.OPEN) return;
-
         ws.send(JSON.stringify({
             type: 'message',
             content: content,
             sender_type: senderType
         }));
-
         input.value = '';
     }
 
@@ -244,10 +336,7 @@
 
         if (sender === senderType) {
             const readStatusSpan = document.createElement('span');
-            readStatusSpan.className = 'tick';
-            if (isRead) {
-                readStatusSpan.classList.add('seen');
-            }
+            readStatusSpan.className = isRead ? 'tick seen' : 'tick';
             readStatusSpan.innerText = '✓✓';
             metaDiv.appendChild(readStatusSpan);
         }
@@ -258,9 +347,8 @@
     }
 
     function markOwnMessagesSeen() {
-        document.querySelectorAll('.message.' + senderType + ' .tick').forEach(tick => {
+        document.querySelectorAll('.message.customer .tick').forEach(tick => {
             tick.classList.add('seen');
-            tick.innerText = '✓✓';
         });
     }
 
@@ -270,6 +358,37 @@
 
     function clearTyping() {
         document.getElementById('typing').innerText = '';
+    }
+
+    let selectedScore = 0;
+
+    document.querySelectorAll('.star').forEach(star => {
+        star.addEventListener('click', () => {
+            selectedScore = parseInt(star.dataset.value);
+            document.querySelectorAll('.star').forEach(s => {
+                s.classList.toggle('active', parseInt(s.dataset.value) <= selectedScore);
+            });
+        });
+    });
+
+    function submitRating() {
+        if (!selectedScore) {
+            alert('Please select a star rating.');
+            return;
+        }
+        fetch(`/chat/${sessionId}/rate/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                score: selectedScore,
+                feedback: document.getElementById('feedback').value
+            })
+        }).then(res => res.json()).then(data => {
+            if (data.success) {
+                document.getElementById('ratingModal').classList.remove('show');
+                alert('Thank you for your feedback!');
+            }
+        });
     }
 </script>
 
