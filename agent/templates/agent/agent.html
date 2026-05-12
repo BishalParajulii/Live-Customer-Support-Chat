@@ -12,7 +12,7 @@
             justify-content: center;
             align-items: center;
             height: 100vh;
-            background: #e8eaf6;
+            background: #f0f2f5;
         }
 
         .chat-box {
@@ -27,7 +27,7 @@
         }
 
         .chat-header {
-            background: #1a237e;
+            background: #2c459c;
             color: white;
             padding: 16px;
             font-size: 16px;
@@ -57,6 +57,8 @@
             font-size: 14px;
             line-height: 1.4;
             word-wrap: break-word;
+            display: flex;           /* ← add */
+            flex-direction: column;  /* ← add */
         }
 
         .message.customer {
@@ -66,7 +68,7 @@
         }
 
         .message.agent {
-            background: #c5cae9;
+            background: #dcf8c6;
             align-self: flex-end;
             border-bottom-right-radius: 2px;
         }
@@ -77,6 +79,29 @@
             padding: 4px 8px;
             min-height: 20px;
         }
+
+        .msg-meta {
+            display: flex;
+            justify-content: flex-end;
+            gap: 4px;
+            font-size: 10px;
+            color: #999;
+            margin-top: 2px;
+        }
+
+        .tick {
+            font-size: 10px;
+            color: #8a8a8a;
+            letter-spacing: -2px;
+        }
+
+        .tick.seen {
+            color: #34b7f1;
+        }
+        .timestamp {
+        font-size: 10px;
+        color: #999;
+    }
 
         .chat-input-area {
             display: flex;
@@ -95,11 +120,11 @@
         }
 
         .chat-input-area input:focus {
-            border-color: #1a237e;
+            border-color: #2c459c;
         }
 
         .chat-input-area button {
-            background: #1a237e;
+            background: #2c459c;
             color: white;
             border: none;
             border-radius: 50%;
@@ -110,7 +135,7 @@
         }
 
         .chat-input-area button:hover {
-            background: #283593;
+            background: #2c459c;
         }
     </style>
 </head>
@@ -118,7 +143,7 @@
 
 <div class="chat-box">
     <div class="chat-header">
-        Agent Panel — Session #{{ session_id }}
+        SwiftDesk Agent
         <span id="status">Connecting...</span>
     </div>
 
@@ -156,11 +181,22 @@
         const data = JSON.parse(e.data);
 
         if (data.type === 'message') {
-            appendMessage(data.content, data.sender_type);
+            appendMessage(data.content, data.sender_type, data.timestamp || '', data.is_read || false);
             clearTyping();
+
+            // Send read receipt
+            if (data.sender_type !== senderType) {
+                ws.send(JSON.stringify({ type: 'read', sender_type: senderType }));
+            }
+
         } else if (data.type === 'typing') {
             if (data.sender_type !== senderType) {
                 showTyping(data.sender_type);
+            }
+
+        } else if (data.type === 'read') {
+            if (data.reader_type !== senderType) {
+                markOwnMessagesSeen();
             }
         }
     };
@@ -194,13 +230,44 @@
         input.value = '';
     }
 
-    function appendMessage(content, sender) {
+    function appendMessage(content, sender, timestamp = '', isRead = false) {
         const messages = document.getElementById('messages');
         const div = document.createElement('div');
         div.className = `message ${sender}`;
-        div.innerText = content;
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'msg-content';
+        contentDiv.innerText = content;
+        div.appendChild(contentDiv);
+
+        const metaDiv = document.createElement('div');
+        metaDiv.className = 'msg-meta';
+
+        const timestampSpan = document.createElement('span');
+        timestampSpan.className = 'timestamp';
+        timestampSpan.innerText = timestamp || new Date().toLocaleTimeString();
+        metaDiv.appendChild(timestampSpan);
+
+        if (sender === senderType) {
+            const readStatusSpan = document.createElement('span');
+            readStatusSpan.className = 'tick';
+            if (isRead) {
+                readStatusSpan.classList.add('seen');
+            }
+            readStatusSpan.innerText = '✓✓';
+            metaDiv.appendChild(readStatusSpan);
+        }
+
+        div.appendChild(metaDiv);
         messages.appendChild(div);
         messages.scrollTop = messages.scrollHeight;
+    }
+
+    function markOwnMessagesSeen() {
+        document.querySelectorAll('.message.' + senderType + ' .tick').forEach(tick => {
+            tick.classList.add('seen');
+            tick.innerText = '✓✓';
+        });
     }
 
     function showTyping(sender) {

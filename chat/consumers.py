@@ -18,6 +18,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
         
         await self.set_session_active()
         
+        history = await self.get_history()
+        
+        for message in history:
+            await self.send(text_data=json.dumps({
+                'type': 'message',
+                'sender_type': message['sender_type'],
+                'content': message['content'],
+                'timestamp': message['timestamp'],
+                'is_read': message['is_read'],
+            }))
+            
+        
         
         
     async def disconnect(self, close_code):
@@ -36,7 +48,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             sender_type = data.get('sender_type' , 'customer')
             
             if content:
-                await self.save_message(sender_type, content)
+                message = await self.save_message(sender_type, content)
                 
                 await self.channel_layer.group_send(
                     self.group_name,
@@ -44,6 +56,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                         'type': 'chat_message',
                         'sender_type': sender_type,
                         'content': content,
+                        'timestamp': message['timestamp'],
+                        'is_read': False,
                     }
                 )
         elif msg_type == 'typing':
@@ -56,12 +70,24 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'sender_type': sender_type,
                 }
             )
+        elif msg_type == 'read':
+            reader_type = data.get('sender_type', 'customer')
+            await self.mark_messages_read(reader_type)
+            await self.channel_layer.group_send(
+                self.group_name,
+                {
+                    'type': 'read_receipt',
+                    'reader_type': reader_type,
+                }
+            )
 
     async def chat_message(self, event):
         await self.send(text_data=json.dumps({
             'type': 'message',
             'sender_type': event['sender_type'],
             'content': event['content'],
+            'timestamp': event.get('timestamp', ''),
+            'is_read': event.get('is_read', False),
         }))
         
     async def typing_indicator(self, event):
@@ -70,6 +96,24 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'sender_type': event['sender_type'],
         }))
         
+    async def read_receipt(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'read',
+            'reader_type': event['reader_type'],
+        }))
+       
+    @database_sync_to_async 
+    def get_history(self):
+        messages = ChatMessage.objects.filter(session_id=self.session_id).order_by('timestamp')[:50]
+        return [{
+            'content' : m.content,
+            'sender_type' : m.sender,
+            'timestamp' : m.timestamp.strftime('%H:%M'),
+            'is_read': m.is_read,
+        } for m in messages
+        ]
+        
+
     @database_sync_to_async
     def save_message(self, sender_type, content):
         session = ChatSession.objects.get(id=self.session_id)
@@ -78,11 +122,21 @@ class ChatConsumer(AsyncWebsocketConsumer):
             sender=sender_type,
             content=content
         )
-        return message
+        return {
+            'id': message.id,
+            'timestamp': message.timestamp.strftime('%H:%M'),
+        }
     
     @database_sync_to_async
     def set_session_active(self):
         ChatSession.objects.filter(id=self.session_id).update(status='active')
+        
+    @database_sync_to_async
+    def mark_messages_read(self, reader_type):
+        ChatMessage.objects.filter(
+            session_id=self.session_id,
+            is_read=False,
+        ).exclude(sender=reader_type).update(is_read=True)
             
             
         
